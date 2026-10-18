@@ -6,10 +6,13 @@ import java.util.List;
 import java.util.Set;
 import metier.enums.EtatPartie;
 import metier.enums.ResultatCoup;
+import metier.exceptions.InvalidLetterException;
+import metier.exceptions.InvalidStateException;
+import metier.exceptions.PlayerNotAllowedException;
 
 public class Partie {
     private final int numero;
-    private final List<Joueur> listeJoueurs = new ArrayList<Joueur>();
+    private final List<Session> sessions = new ArrayList<>();
     private final int nbJoueursRequis;
     private final Mot mot;
     private EtatPartie etat;
@@ -26,25 +29,32 @@ public class Partie {
         this.etat = EtatPartie.EN_ATTENTE;
     }
 
-    // ===== Getters
+    // ===== Getters =====
 
     public int getNumero() {
         return numero;
     }
 
-    public EtatPartie getEtat() {
+    public synchronized EtatPartie getEtat() {
         return etat;
     }
 
-    public String getMotAffiche() {
+    public synchronized String getMotAffiche() {
         return mot.getMotAffiche();
     }
 
-    public int getNbErreurs() {
+    public synchronized String getMotRevele() {
+        if (etat != EtatPartie.GAGNEE && etat != EtatPartie.PERDUE) {
+            throw new InvalidStateException("Le mot n'est révélé qu'en fin de partie");
+        }
+        return mot.getMotCache();
+    }
+
+    public synchronized int getNbErreurs() {
         return nbErreurs;
     }
 
-    public int getErreursRestantes() {
+    public synchronized int getErreursRestantes() {
         return maxErreursAcceptees - nbErreurs;
     }
 
@@ -52,34 +62,57 @@ public class Partie {
         return nbJoueursRequis;
     }
 
-    public synchronized List<Joueur> getListeJoueurs() {
-        return List.copyOf(listeJoueurs);   // copie : l'extérieur ne modifie pas la liste interne
+    public synchronized List<Session> getSessions() {
+        return List.copyOf(sessions);       // copie : l'extérieur ne modifie pas la liste interne
     }
 
     // ===== Joueurs =====
 
-    public synchronized void ajouterJoueur(Joueur j) {
-        if (listeJoueurs.size() >= nbJoueursRequis) {
-            throw new IllegalStateException("Partie complète");
+    public synchronized Session rejoindre(Joueur j) {
+        if (etat == EtatPartie.GAGNEE || etat == EtatPartie.PERDUE) {
+            throw new InvalidStateException("La partie est terminée");
         }
-        listeJoueurs.add(j);
-        j.setConnecte(true);
+        if (sessions.size() >= nbJoueursRequis) {
+            throw new PlayerNotAllowedException("Partie complète");
+        }
+        if (sessions.stream().anyMatch(s -> s.getJoueur().equals(j))) {
+            throw new PlayerNotAllowedException("Ce joueur est déjà dans la partie");
+        }
+        Session s = new Session(j, this);
+        sessions.add(s);
+        recalculerEtat();
+        return s;
+    }
+
+    public synchronized void deconnecter(Session s) {
+        verifierAppartenance(s);
+        s.marquerDeconnectee();
         recalculerEtat();
     }
 
-    public synchronized void deconnecter(Joueur j) {
-        j.setConnecte(false);
+    public synchronized void reprendre(Session s) {
+        verifierAppartenance(s);
+        s.marquerConnectee();
         recalculerEtat();
     }
 
-    public synchronized void reprendre(Joueur j) {
-        j.setConnecte(true);
-        recalculerEtat();
+    private void verifierAppartenance(Session s) {
+        if (s == null || s.getPartie() != this) {
+            throw new PlayerNotAllowedException("Session étrangère à cette partie");
+        }
+    }
+
+    private void verifierConnectee(Session s) {
+        if (!s.estConnectee()) {
+            throw new PlayerNotAllowedException("Session déconnectée");
+        }
     }
 
     // ===== Jeu =====
 
-    public synchronized ResultatCoup proposerLettre(char lettre) {
+    public synchronized ResultatCoup proposerLettre(Session s, char lettre) {
+        verifierAppartenance(s);
+        verifierConnectee(s);
         if (etat != EtatPartie.EN_COURS) {
             throw new InvalidStateException("La partie n'est pas en cours : " + etat);
         }
@@ -113,7 +146,7 @@ public class Partie {
     private void recalculerEtat() {
         if (etat == EtatPartie.GAGNEE || etat == EtatPartie.PERDUE) return;
 
-        long presents = listeJoueurs.stream().filter(Joueur::estConnecte).count();
+        long presents = sessions.stream().filter(Session::estConnectee).count();
 
         if (presents == 0 && demarree) {
             etat = EtatPartie.SAUVEGARDEE;
