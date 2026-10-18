@@ -20,8 +20,8 @@ public class Mot {
     }
 
     // Dis si la lettre est dans le mot, et révèle toutes ses occurrences
-    // Accès restreint au package main.java.metier : seule Partie doit l'appeler.
-    /* Package private */ boolean contient(char lettre) {
+    // Accès restreint au package metier : seule Partie doit l'appeler.
+    /* package-private */ boolean contient(char lettre) {
         lettre = Character.toLowerCase(lettre);
         boolean trouve = false;
         for(int i = 0; i < getMotCache().length(); i++) {
