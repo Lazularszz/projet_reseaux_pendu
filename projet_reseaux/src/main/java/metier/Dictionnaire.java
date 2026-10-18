@@ -30,4 +30,3 @@ public class Dictionnaire {
         return new Mot(motAleatoire);
     }
 }
-
