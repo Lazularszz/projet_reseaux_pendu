@@ -9,6 +9,8 @@ import metier.enums.ResultatCoup;
 import metier.exceptions.InvalidLetterException;
 import metier.exceptions.InvalidStateException;
 import metier.exceptions.PlayerNotAllowedException;
+import java.time.Instant;
+import metier.exceptions.UnknownSessionException;
 
 public class Partie {
     private final int numero;
@@ -20,6 +22,7 @@ public class Partie {
     private int nbErreurs;
     private final int maxErreursAcceptees;
     private boolean demarree; // Au moins un coup joué
+    private Instant termineeLe;   // null tant que la partie n'est pas terminée
 
     public Partie(int numero, Mot mot, int nbJoueursRequis, int maxErreursAcceptees) {
         this.numero = numero;
@@ -81,19 +84,26 @@ public class Partie {
         Session s = new Session(j, this);
         sessions.add(s);
         recalculerEtat();
+        notifierTous();
         return s;
     }
 
     public synchronized void deconnecter(Session s) {
         verifierAppartenance(s);
+        if (!s.estConnectee()) return;
         s.marquerDeconnectee();
         recalculerEtat();
+        notifierTous();
     }
 
     public synchronized void reprendre(Session s) {
         verifierAppartenance(s);
+        if (s.estExpiree()) {
+            throw new UnknownSessionException("Session expirée");
+        }
         s.marquerConnectee();
         recalculerEtat();
+        notifierTous();
     }
 
     private void verifierAppartenance(Session s) {
@@ -116,6 +126,7 @@ public class Partie {
         if (etat != EtatPartie.EN_COURS) {
             throw new InvalidStateException("La partie n'est pas en cours : " + etat);
         }
+        verifierCoupAutorise(s);                       // point d'extension
         if (!Character.isLetter(lettre)) {
             throw new InvalidLetterException("Une seule lettre est attendue.");
         }
@@ -125,17 +136,23 @@ public class Partie {
             return ResultatCoup.DEJA_PROPOSEE;
         }
         demarree = true;
+        ResultatCoup r = appliquer(lettre);
+        apresCoup(s, r);                               // point d'extension
+        notifierTous();
+        return r;
+    }
 
+    private ResultatCoup appliquer(char lettre) {
         if (mot.contient(lettre)) {
             if (mot.estDecouvert()) {
-                etat = EtatPartie.GAGNEE;
+                terminer(EtatPartie.GAGNEE);
                 return ResultatCoup.GAGNANT;
             }
             return ResultatCoup.CORRECTE;
         }
         nbErreurs++;
         if (nbErreurs >= maxErreursAcceptees) {
-            etat = EtatPartie.PERDUE;
+            terminer(EtatPartie.PERDUE);
             return ResultatCoup.PERDANT;
         }
         return ResultatCoup.INCORRECTE;
@@ -154,6 +171,42 @@ public class Partie {
             etat = EtatPartie.EN_COURS;
         } else {
             etat = EtatPartie.EN_ATTENTE;
+        }
+    }
+
+    // ===== Points d'extension (vides = comportement solo) =====
+// Redéfinis plus tard par une sous-classe : tour de jeu, chrono, forfait...
+    protected void verifierCoupAutorise(Session s) { }
+    protected void apresCoup(Session s, ResultatCoup r) { }
+    protected void apresExpiration(Session s) { }
+
+    // Fin de partie, utilisable aussi par une sous-classe (forfait, temps écoulé)
+    protected void terminer(EtatPartie fin) {
+        etat = fin;
+        termineeLe = Instant.now();
+    }
+
+    // ===== Expiration, appelée par le gestionnaire =====
+    /* package-private */ synchronized boolean expirer(Session s, Instant limite) {
+        verifierAppartenance(s);
+        Instant depuis = s.getDeconnecteDepuis();
+        if (s.estConnectee() || s.estExpiree() || depuis == null || !depuis.isBefore(limite)) {
+            return false;
+        }
+        s.marquerExpiree();
+        apresExpiration(s);
+        return true;
+    }
+
+    /* package-private */ synchronized boolean peutEtreSupprimee(Instant limite) {
+        boolean terminee = termineeLe != null && termineeLe.isBefore(limite);
+        boolean abandonnee = !sessions.isEmpty() && sessions.stream().allMatch(Session::estExpiree);
+        return terminee || abandonnee;
+    }
+
+    private void notifierTous() {
+        for (Session s : sessions) {
+            if (s.estConnectee()) s.notifier(this);
         }
     }
 }

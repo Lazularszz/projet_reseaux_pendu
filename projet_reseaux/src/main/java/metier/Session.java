@@ -1,6 +1,7 @@
 package metier;
 
 import java.nio.charset.StandardCharsets;
+import java.util.function.Consumer;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.Instant;
@@ -16,6 +17,8 @@ public class Session {
     private final Partie partie;
     private volatile boolean connecte;
     private volatile Instant deconnecteDepuis;      // null tant que le joueur est connecté
+    private volatile boolean expiree;
+    private volatile Consumer<Partie> ecouteur = p -> { };
 
     // Accès restreint au package metier : seule Partie doit l'appeler.
     /* package-private */ Session(Joueur joueur, Partie partie) {
@@ -52,6 +55,14 @@ public class Session {
         return deconnecteDepuis;
     }
 
+    public boolean estExpiree() {
+        return expiree;
+    }
+
+    /* package-private */ void marquerExpiree() {
+        expiree = true;
+    }
+
     private static String genererJeton() {
         byte[] octets = new byte[16];
         RNG.nextBytes(octets);
@@ -77,4 +88,12 @@ public class Session {
         connecte = false;
         deconnecteDepuis = Instant.now();
     }
+
+    // L'écouteur doit seulement placer un message dans une file (jamais d'écriture
+    // socket directe), sinon un client lent bloquerait toute la partie.
+    public void setEcouteur(Consumer<Partie> e) {
+        this.ecouteur = (e == null) ? p -> { } : e;
+    }
+
+    /* package-private */ void notifier(Partie p) { ecouteur.accept(p); }
 }
