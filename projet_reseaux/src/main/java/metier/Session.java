@@ -7,9 +7,13 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.UUID;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.function.Supplier;
 
 public class Session {
     private static final SecureRandom RNG = new SecureRandom();
+    private static final int NB_REPONSES_MEMORISEES = 20;
 
     private final String identifiant;
     private final String jeton;
@@ -19,6 +23,12 @@ public class Session {
     private volatile Instant deconnecteDepuis;      // null tant que le joueur est connecté
     private volatile boolean expiree;
     private volatile Consumer<Partie> ecouteur = p -> { };
+    private final Map<Long, Object> reponses = new LinkedHashMap<>() {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<Long, Object> eldest) {
+            return size() > NB_REPONSES_MEMORISEES;
+        }
+    };
 
     // Accès restreint au package metier : seule Partie doit l'appeler.
     /* package-private */ Session(Joueur joueur, Partie partie) {
@@ -96,4 +106,17 @@ public class Session {
     }
 
     /* package-private */ void notifier(Partie p) { ecouteur.accept(p); }
+
+    // Exécute l'action une seule fois par request_id. Si ce request_id a déjà été
+    // traité, renvoie la réponse mémorisée sans rien réappliquer.
+    // Si l'action lève une exception, rien n'est mémorisé.
+    @SuppressWarnings("unchecked")
+    public synchronized <T> T executerUneFois(long requestId, Supplier<T> action) {
+        if (reponses.containsKey(requestId)) {
+            return (T) reponses.get(requestId);
+        }
+        T resultat = action.get();
+        reponses.put(requestId, resultat);
+        return resultat;
+    }
 }
