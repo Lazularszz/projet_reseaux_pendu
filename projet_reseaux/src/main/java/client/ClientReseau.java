@@ -150,6 +150,10 @@ public class ClientReseau implements AutoCloseable {
     // ===== Utilitaires =====
 
     private void envoyer(Message m) {
+        if (out == null) {
+            ecouteur.surDeconnexion("Pas de connexion au serveur");
+            return;
+        }
         envois.execute(() -> {
             try {
                 Framing.ecrire(out, Codec.encoder(m));
