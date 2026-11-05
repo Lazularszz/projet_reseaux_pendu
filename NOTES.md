@@ -9,7 +9,7 @@ grâce aux points d'extension de `Partie` (`verifierCoupAutorise`, `apresCoup`, 
 - Forfait ou annulation quand un joueur expire : `apresExpiration` dans `PartieMulti`, avec `terminer(...)`.
 - Chronomètre : un champ de date dans la sous-classe, vérifié dans `verifierCoupAutorise`.
 - Lobby : `partiesEnAttente()` dans le gestionnaire (un filtre sur `parties.values()`), et les messages `LIST_ROOMS` etc.
-- Mes parties sauvegardées : filtre sur `sessions.values()` par `getJoueur()`.
+- Mes parties sauvegardées : liste tenue côté client (`session_id` + `token`), voir Pistes d’amélioration.
 - Idempotence : faite via `Session.executerUneFois`, le `ClientHandler` doit l'appeler avant `proposerLettre`.
 - Chat, salles : de nouvelles classes et méthodes, diffusées via les écouteurs.
 - Quitter définitivement : une méthode `quitter(Session)` dans `Partie`.
@@ -19,3 +19,12 @@ grâce aux points d'extension de `Partie` (`verifierCoupAutorise`, `apresCoup`, 
 - Un nombre de joueurs variable (démarrage décidé par l'hôte) obligerait à modifier la condition
 `presents == nbJoueursRequis` dans `recalculerEtat`. Tant que l'effectif est fixe (2 en PvP), cette condition reste valable.
 - Une retransmission de `NEW_GAME` après une coupure ne peut pas être dédoublonnée : la session n'existe pas encore côté client si la réponse a été perdue, donc il n'a ni `session_id` ni `jeton`, et un nouveau `NEW_GAME` crée une deuxième partie. Ce n'est pas grave, la partie orpheline expirera, mais cela vaut le coup d'en être conscient.
+
+## Pistes d'amélioration
+
+- **Liste « mes parties » côté client** : le client ne garde aujourd'hui qu'une paire
+  session_id + token (la dernière partie, via `Preferences`). Lancer une nouvelle partie
+  écrase la précédente, qui reste sur le serveur mais devient inaccessible.
+  À faire : stocker une liste de paires, proposer un choix de partie à reprendre dans
+  l'interface, et retirer une paire quand la partie est terminée ou renvoie UNKNOWN_SESSION.
+  Ne touche ni le serveur ni le métier.
