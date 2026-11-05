@@ -42,7 +42,7 @@ public class ClientConsole {
             demarrerLecture(in);
             envoyer(out, new Message(TypeMessage.HELLO, null, null, payload("pseudonym", pseudo)));
 
-            System.out.println("Commandes : new [n] | <lettre> | save | resume [session_id token] | quit");
+            System.out.println("Commandes : new | <lettre> | save | resume [session_id token] | quit");
             Scanner sc = new Scanner(System.in);
             while (sc.hasNextLine()) {
                 String ligne = sc.nextLine().trim();
