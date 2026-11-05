@@ -11,6 +11,7 @@ import metier.exceptions.InvalidStateException;
 import metier.exceptions.PlayerNotAllowedException;
 import java.time.Instant;
 import metier.exceptions.UnknownSessionException;
+import java.util.stream.Collectors;
 
 public class Partie {
     private final int numero;
@@ -208,5 +209,13 @@ public class Partie {
         for (Session s : sessions) {
             if (s.estConnectee()) s.notifier(this);
         }
+    }
+
+    // Lettres déjà proposées, triées (ex. "aeo"), pour le champ 'letters' du STATE
+    public synchronized String getLettresProposees() {
+        return lettresProposees.stream()
+                .sorted()
+                .map(String::valueOf)
+                .collect(Collectors.joining());
     }
 }
