@@ -12,6 +12,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class GestionnaireParties {
     private static final int MAX_ERREURS_PAR_DEFAUT = 7;
+    private static final Duration DELAI_REPRISE_PAR_DEFAUT = Duration.ofDays(7);
+    private static final Duration DELAI_PARTIE_TERMINEE_PAR_DEFAUT = Duration.ofMinutes(10);
 
     private final Dictionnaire dictionnaire;
     private final Map<String, Session> sessions = new ConcurrentHashMap<>();
@@ -73,18 +75,31 @@ public class GestionnaireParties {
         s.getPartie().deconnecter(s);
     }
 
-    // Supprime les sessions déconnectées depuis plus longtemps que le délai
+    // Valeurs du protocole (appelée par la tâche périodique du serveur)
+    public int purgerExpirees() {
+        return purgerExpirees(DELAI_REPRISE_PAR_DEFAUT, DELAI_PARTIE_TERMINEE_PAR_DEFAUT);
+    }
+
+    // Une seule durée pour les deux cas
     public int purgerExpirees(Duration delai) {
-        Instant limite = Instant.now().minus(delai);
+        return purgerExpirees(delai, delai);
+    }
+
+    // Supprime les sessions déconnectées depuis plus longtemps que le délai
+    public int purgerExpirees(Duration delaiReprise, Duration delaiPartieTerminee) {
+        Instant maintenant = Instant.now();
+        Instant limiteReprise = maintenant.minus(delaiReprise);
+        Instant limiteTerminee = maintenant.minus(delaiPartieTerminee);
+
         int retirees = 0;
         for (Session s : sessions.values()) {
-            if (s.getPartie().expirer(s, limite)) {
+            if (s.getPartie().expirer(s, limiteReprise)) {
                 sessions.remove(s.getIdentifiant(), s);
                 retirees++;
             }
         }
         for (Partie p : parties.values()) {
-            if (p.peutEtreSupprimee(limite)) {
+            if (p.peutEtreSupprimee(limiteTerminee)) {
                 p.getSessions().forEach(s -> sessions.remove(s.getIdentifiant(), s));
                 parties.remove(p.getNumero(), p);
             }

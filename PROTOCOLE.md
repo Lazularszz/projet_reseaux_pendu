@@ -79,6 +79,7 @@ Pour `NEW_GAME`, `request_id` est unique dans la connexion (la session n'existe 
 | `result` | texte, facultatif | Résultat du coup : `CORRECTE`, `INCORRECTE`, `DEJA_PROPOSEE`, `GAGNANT`, `PERDANT`. Présent seulement en réponse à `LETTER`. |
 | `token` | texte, facultatif | Jeton secret de reprise. **Présent uniquement dans la réponse à `NEW_GAME`** (et à un futur `JOIN_GAME`), jamais ailleurs. |
 | `revealed` | texte, facultatif | Mot complet, présent uniquement si `state` vaut `GAGNEE` ou `PERDUE`. |
+| `letters` | texte | Lettres déjà proposées, en minuscules, par ordre alphabétique (ex. `aeo`). Toujours présent, vide au début. |
 
 Chaque `STATE` porte le `session_id` au niveau racine, ce qui permet au client de savoir de quelle partie il s'agit quand il en joue plusieurs. Le client doit mémoriser `session_id` et `token` de chaque partie pour pouvoir la reprendre.
 
@@ -96,7 +97,7 @@ Chaque `STATE` porte le `session_id` au niveau racine, ce qui permet au client d
 
 {"type":"LETTER","request_id":1,"session_id":"3f2b9c1e","payload":{"letter":"e"}}
 {"type":"STATE","request_id":1,"session_id":"3f2b9c1e","payload":
-  {"state":"EN_COURS","word":"_e__","remaining":7,"errors":0,"result":"CORRECTE"}}
+  {"state":"EN_COURS","word":"_e__","remaining":7,"errors":0,"result":"CORRECTE","letters":"e"}}
 
 {"type":"LETTER","request_id":2,"session_id":"3f2b9c1e","payload":{"letter":"1"}}
 {"type":"ERROR","request_id":2,"payload":
