@@ -42,7 +42,7 @@ public class ClientConsole {
             demarrerLecture(in);
             envoyer(out, new Message(TypeMessage.HELLO, null, null, payload("pseudonym", pseudo)));
 
-            System.out.println("Commandes : new | <lettre> | save | resume [session_id token] | quit");
+            System.out.println("Commandes : new | <lettre> | save | resume [session_id token] | raw <json> | quit");
             Scanner sc = new Scanner(System.in);
             while (sc.hasNextLine()) {
                 String ligne = sc.nextLine().trim();
@@ -73,8 +73,11 @@ public class ClientConsole {
                 envoyer(out, new Message(TypeMessage.RESUME, null, id, payload("token", tok)));
                 sessionId = id;
                 jeton = tok;
-            }
-            default -> {
+            } case "raw" -> {
+                String json = ligne.substring(3).trim();
+                if (json.isEmpty()) throw new IllegalArgumentException("usage : raw <json>");
+                Framing.ecrire(out, json);   // envoyé tel quel, sans aucune validation côté client
+            } default -> {
                 if (ligne.length() != 1) {
                     throw new IllegalArgumentException("une seule lettre ou une commande connue");
                 }
