@@ -104,6 +104,53 @@ Chaque `STATE` porte le `session_id` au niveau racine, ce qui permet au client d
   {"code":"INVALID_LETTER","message":"Une seule lettre est attendue."}}
 ```
 
+### 4.4 JOIN_GAME (client vers serveur)
+
+Rejoint une partie à deux joueurs à partir de son code.
+
+| Champ | Où | Description |
+|---|---|---|
+| `request_id` | racine, obligatoire | Identifiant de la requête, unique dans la connexion. |
+| `code` | payload, obligatoire | Code de la partie (non sensible à la casse), communiqué par son créateur. |
+
+Réponse : un `STATE` qui contient le `token` de la nouvelle session, comme pour `NEW_GAME`.
+Erreurs : `UNKNOWN_GAME` (code inconnu), `PLAYER_NOT_ALLOWED` (partie complète),
+`INVALID_STATE` (partie terminée).
+
+### 4.5 Parties à deux joueurs
+
+`NEW_GAME` accepte `players` valant 1 (défaut) ou 2. Avec 2, la partie reste `EN_ATTENTE`
+jusqu'à l'arrivée du second joueur. Le mot est partagé et les joueurs proposent une lettre
+à tour de rôle, le créateur commençant.
+
+- Celui qui **complète le mot** gagne.
+- Si le pendu est complet, celui qui a commis la **dernière erreur** perd.
+- Si un joueur est déconnecté plus longtemps que le délai de reprise, il perd par **forfait**.
+- Une lettre déjà proposée ne fait pas perdre son tour.
+
+Champs supplémentaires du `STATE` (parties à deux joueurs seulement) :
+
+| Champ | Type | Description |
+|---|---|---|
+| `code` | texte | Code de la partie, présent tant qu'elle est `EN_ATTENTE`. |
+| `players` | tableau de textes | Pseudonymes, dans l'ordre d'arrivée. |
+| `your_turn` | booléen | `true` si c'est au destinataire de jouer. Présent si `state` vaut `EN_COURS`. |
+| `winner` | texte | Pseudonyme du vainqueur. Présent si `state` vaut `GAGNEE` ou `PERDUE`. |
+| `you_won` | booléen | `true` si le destinataire a gagné. Présent en même temps que `winner`. |
+
+Dans une partie à deux, `state` décrit la **partie** (mot trouvé ou pendu complet) ;
+c'est `you_won` qui dit si le destinataire a gagné ou perdu.
+
+Le serveur envoie spontanément un `STATE` (sans `request_id`) à l'autre joueur quand
+l'adversaire joue, arrive, se déconnecte ou reprend sa partie.
+
+Erreur supplémentaire : `PLAYER_NOT_ALLOWED` si une lettre est proposée hors de son tour.
+
+Machine à états d'une partie à deux : `EN_ATTENTE` (un seul joueur connecté) passe à
+`EN_COURS` quand les deux sont connectés, puis à `GAGNEE` ou `PERDUE`. Si un joueur se
+déconnecte, la partie repasse à `EN_ATTENTE`, et à `SAUVEGARDEE` si les deux sont partis.
+`LETTER` n'est accepté qu'en `EN_COURS` et pour le joueur dont c'est le tour.
+
 ## 5. Machine à états d'une partie
 
 États : `EN_ATTENTE`, `EN_COURS`, `GAGNEE`, `PERDUE`, `SAUVEGARDEE`.
