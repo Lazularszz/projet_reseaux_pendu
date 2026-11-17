@@ -9,12 +9,18 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.security.SecureRandom;
+import java.util.Locale;
 
 public class GestionnaireParties {
     private static final int MAX_ERREURS_PAR_DEFAUT = 7;
     private static final Duration DELAI_REPRISE_PAR_DEFAUT = Duration.ofDays(7);
     private static final Duration DELAI_PARTIE_TERMINEE_PAR_DEFAUT = Duration.ofMinutes(10);
+    private static final String ALPHABET_CODE = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";  // sans 0, O, 1, I
+    private static final int LONGUEUR_CODE = 6;
+    private static final SecureRandom RNG = new SecureRandom();
 
+    private final Map<String, PartieMulti> partiesParCode = new ConcurrentHashMap<>();
     private final Dictionnaire dictionnaire;
     private final Map<String, Session> sessions = new ConcurrentHashMap<>();
     private final AtomicInteger compteurParties = new AtomicInteger();
@@ -31,8 +37,16 @@ public class GestionnaireParties {
 
     // Mot choisi par l'appelant (mode compétitif par exemple)
     public Session creerPartie(Joueur joueur, int nbJoueursRequis, Mot mot) {
-        Partie partie = new Partie(compteurParties.incrementAndGet(),
-                mot, nbJoueursRequis, MAX_ERREURS_PAR_DEFAUT);
+        int numero = compteurParties.incrementAndGet();
+        Partie partie;
+        if (nbJoueursRequis == 1) {
+            partie = new Partie(numero, mot, 1, MAX_ERREURS_PAR_DEFAUT);
+        } else {
+            PartieMulti multi = new PartieMulti(numero, mot, nbJoueursRequis,
+                    MAX_ERREURS_PAR_DEFAUT, genererCode());
+            partiesParCode.put(multi.getCode(), multi);
+            partie = multi;
+        }
         return inscrire(partie, joueur);
     }
 
@@ -43,6 +57,28 @@ public class GestionnaireParties {
             throw new UnknownGameException("Partie inconnue ou supprimée");
         }
         return inscrire(partie, joueur);
+    }
+
+    // Rejoint une partie à deux joueurs à partir de son code (non sensible à la casse)
+    public Session rejoindrePartieParCode(String code, Joueur joueur) {
+        PartieMulti partie = (code == null) ? null
+                : partiesParCode.get(code.trim().toUpperCase(Locale.ROOT));
+        if (partie == null) {
+            throw new UnknownGameException("Code de partie inconnu");
+        }
+        return inscrire(partie, joueur);
+    }
+
+    private String genererCode() {
+        String code;
+        do {
+            StringBuilder sb = new StringBuilder(LONGUEUR_CODE);
+            for (int i = 0; i < LONGUEUR_CODE; i++) {
+                sb.append(ALPHABET_CODE.charAt(RNG.nextInt(ALPHABET_CODE.length())));
+            }
+            code = sb.toString();
+        } while (partiesParCode.containsKey(code));
+        return code;
     }
 
     private Session inscrire(Partie partie, Joueur joueur) {
@@ -102,6 +138,9 @@ public class GestionnaireParties {
             if (p.peutEtreSupprimee(limiteTerminee)) {
                 p.getSessions().forEach(s -> sessions.remove(s.getIdentifiant(), s));
                 parties.remove(p.getNumero(), p);
+                if (p instanceof PartieMulti m) {
+                    partiesParCode.remove(m.getCode(), m);
+                }
             }
         }
         return retirees;
