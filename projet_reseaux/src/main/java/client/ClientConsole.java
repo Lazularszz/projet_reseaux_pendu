@@ -29,6 +29,7 @@ public class ClientConsole {
     // Dernière partie connue (pour 'resume' sans arguments)
     private static volatile String sessionId;
     private static volatile String jeton;
+    private static volatile boolean ferme;   // avec les autres champs statiques
 
     public static void main(String[] args) throws IOException {
         String hote = args.length > 0 ? args[0] : HOTE_PAR_DEFAUT;
@@ -47,7 +48,10 @@ public class ClientConsole {
             while (sc.hasNextLine()) {
                 String ligne = sc.nextLine().trim();
                 if (ligne.isEmpty()) continue;
-                if (ligne.equals("quit")) break;
+                if (ligne.equals("quit")) {
+                    ferme = true;
+                    break;
+                }
                 try {
                     traiterCommande(out, ligne);
                 } catch (IllegalArgumentException e) {
@@ -73,11 +77,13 @@ public class ClientConsole {
                 envoyer(out, new Message(TypeMessage.RESUME, null, id, payload("token", tok)));
                 sessionId = id;
                 jeton = tok;
-            } case "raw" -> {
+            }
+            case "raw" -> {
                 String json = ligne.substring(3).trim();
                 if (json.isEmpty()) throw new IllegalArgumentException("usage : raw <json>");
                 Framing.ecrire(out, json);   // envoyé tel quel, sans aucune validation côté client
-            } default -> {
+            }
+            default -> {
                 if (ligne.length() != 1) {
                     throw new IllegalArgumentException("une seule lettre ou une commande connue");
                 }
@@ -98,7 +104,7 @@ public class ClientConsole {
                 }
                 System.out.println("[Connexion fermée par le serveur]");
             } catch (IOException e) {
-                System.out.println("[Connexion perdue : " + e.getMessage() + "]");
+                if (!ferme) System.out.println("[Connexion perdue : " + e.getMessage() + "]");
             }
         });
         t.setDaemon(true);
