@@ -100,6 +100,13 @@ public final class Codec {
                     }
                 }
             }
+            case TypeMessage.JOIN_GAME -> {
+                exigerRequestId(m);
+                String code = m.texte("code");
+                if (code == null || code.isBlank()) {
+                    throw new InvalidMessageException("'code' est obligatoire");
+                }
+            }
             case TypeMessage.LETTER -> {
                 exigerRequestId(m);
                 exigerSessionId(m);
