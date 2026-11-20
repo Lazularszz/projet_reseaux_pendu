@@ -91,10 +91,14 @@ public class Partie {
 
     public synchronized void deconnecter(Session s) {
         verifierAppartenance(s);
+        // ne rien notifier si la partie était deja terminee avant la déconnexion
+        boolean etaitTerminee = (etat == EtatPartie.GAGNEE || etat == EtatPartie.PERDUE);
         if (!s.estConnectee()) return;
         s.marquerDeconnectee();
         recalculerEtat();
-        notifierTous();
+        if (!etaitTerminee) {
+            notifierTous();
+        }
     }
 
     public synchronized void reprendre(Session s) {
