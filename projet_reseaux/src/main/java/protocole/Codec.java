@@ -115,6 +115,14 @@ public final class Codec {
                 }
                 // Le contenu de 'letter' (une seule lettre) est contrôlé par le métier : INVALID_LETTER
             }
+            case TypeMessage.WORD -> {
+                exigerRequestId(m);
+                exigerSessionId(m);
+                if (m.texte("word") == null) {
+                    throw new InvalidMessageException("'word' est obligatoire");
+                }
+                // Le contenu (lettres seulement) est contrôlé par le métier : INVALID_LETTER
+            }
             case TypeMessage.SAVE -> {
                 exigerRequestId(m);
                 exigerSessionId(m);
