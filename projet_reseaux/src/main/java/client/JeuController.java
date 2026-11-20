@@ -226,7 +226,7 @@ public class JeuController implements EcouteurClient {
 
     private void afficherPendu(int erreurs, int max) {
         int index = (max <= 0) ? 0 : Math.min(NB_IMAGES_PENDU - 1, erreurs * (NB_IMAGES_PENDU - 1) / max);
-        URL url = getClass().getResource("/images/pendu" + index + ".png");
+        URL url = getClass().getResource("/images/pendu_" + index + ".png");
         imagePendu.setImage(url == null ? null : new Image(url.toExternalForm()));
     }
 }
