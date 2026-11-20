@@ -106,9 +106,12 @@ public class Partie {
         if (s.estExpiree()) {
             throw new UnknownSessionException("Session expirée");
         }
+        boolean etaitTerminee = (etat == EtatPartie.GAGNEE || etat == EtatPartie.PERDUE);
         s.marquerConnectee();
         recalculerEtat();
-        notifierTous();
+        if (!etaitTerminee) {
+            notifierTous();
+        }
     }
 
     private void verifierAppartenance(Session s) {
