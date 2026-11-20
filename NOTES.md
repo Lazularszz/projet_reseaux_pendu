@@ -31,6 +31,15 @@ tient en plus un index des parties par code, et la purge retire ce code. Le comp
 - Interface graphique : le contrôleur ne gère pour l'instant que le solo.
 - Après un `RESUME`, le client ne renvoie pas encore la dernière requête sans réponse (section 8
   du protocole). Le serveur gère déjà l'idempotence : il ne manque que ce rejeu côté client.
+- **Test sur le réseau réel (eduroam, salle de TP)** : le serveur a été testé en local 
+  (`localhost`, IPv4 et IPv6) mais pas encore entre deux machines sur le réseau de la démo. 
+  Risques : isolation des clients Wi-Fi, pare-feu Windows (réseau « Public »), adresse IP 
+  qui change selon le réseau. À faire sur place : relever l'IP du serveur (`ipconfig`), 
+  tester avec `Test-NetConnection <ip> -Port 5000` depuis l'autre machine, puis lancer 
+  le client avec le jar 
+  (`java -cp pendu-reseau-1.0-SNAPSHOT-tout-en-un.jar client.ClientConsole <ip> 5000 <pseudo>`). 
+  Plan B si eduroam bloque : partage de connexion d'un téléphone. En dernier recours, démo en local 
+  avec plusieurs clients sur la même machine.
 
 ## Limites connues
 
@@ -46,6 +55,8 @@ tient en plus un index des parties par code, et la purge retire ce code. Le comp
 - Quand un joueur perd par forfait (expiration), son adversaire connecté n'est pas notifié :
   `notifierTous` est privée dans `Partie`. Il le découvre à sa prochaine requête.
 - Tout est en mémoire : les parties sont perdues si le serveur redémarre.
+- Le jar tout-en-un contient le serveur et le client console, mais pas l'interface graphique :
+  JavaFX dépend du système d'exploitation, donc l'interface se lance avec `mvn javafx:run`.
 
 ## Pistes d'amélioration
 
