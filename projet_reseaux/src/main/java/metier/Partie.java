@@ -143,6 +143,42 @@ public class Partie {
         return r;
     }
 
+    // Proposition du mot entier : exact, le joueur gagne tout de suite ; faux, c'est une erreur.
+    public synchronized ResultatCoup proposerMot(Session s, String proposition) {
+        verifierAppartenance(s);
+        verifierConnectee(s);
+        if (etat != EtatPartie.EN_COURS) {
+            throw new InvalidStateException("La partie n'est pas en cours : " + etat);
+        }
+        verifierCoupAutorise(s);                       // point d'extension
+        if (proposition == null || proposition.isEmpty()
+                || !proposition.chars().allMatch(Character::isLetter)) {
+            throw new InvalidLetterException("Un mot ne contient que des lettres.");
+        }
+        demarree = true;
+
+        ResultatCoup r;
+        if (proposition.equalsIgnoreCase(mot.getMotCache())) {
+            for (char c : proposition.toLowerCase().toCharArray()) {
+                lettresProposees.add(c);
+                mot.contient(c);                       // dévoile toutes les occurrences
+            }
+            terminer(EtatPartie.GAGNEE);
+            r = ResultatCoup.GAGNANT;
+        } else {
+            nbErreurs++;
+            if (nbErreurs >= maxErreursAcceptees) {
+                terminer(EtatPartie.PERDUE);
+                r = ResultatCoup.PERDANT;
+            } else {
+                r = ResultatCoup.INCORRECTE;
+            }
+        }
+        apresCoup(s, r);                               // point d'extension
+        notifierTous();
+        return r;
+    }
+
     private ResultatCoup appliquer(char lettre) {
         if (mot.contient(lettre)) {
             if (mot.estDecouvert()) {
