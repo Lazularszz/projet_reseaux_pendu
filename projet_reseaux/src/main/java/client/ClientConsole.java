@@ -43,7 +43,7 @@ public class ClientConsole {
             demarrerLecture(in);
             envoyer(out, new Message(TypeMessage.HELLO, null, null, payload("pseudonym", pseudo)));
 
-            System.out.println("Commandes : new | <lettre> | save | resume [session_id token] | raw <json> | quit");
+            System.out.println("Commandes : new [1|2] | join <code> | <lettre> | mot <mot> | save | resume [session_id token] | raw <json> | quit");
             Scanner sc = new Scanner(System.in);
             while (sc.hasNextLine()) {
                 String ligne = sc.nextLine().trim();
@@ -69,6 +69,11 @@ public class ClientConsole {
                 if (mots.length > 1) p.put("players", Integer.parseInt(mots[1]));
                 envoyer(out, new Message(TypeMessage.NEW_GAME, prochainId(), null, p));
             }
+            case "join" -> {
+                if (mots.length < 2) throw new IllegalArgumentException("usage : join <code>");
+                envoyer(out, new Message(TypeMessage.JOIN_GAME, prochainId(), null,
+                        payload("code", mots[1])));
+            }
             case "save" -> envoyer(out,
                     new Message(TypeMessage.SAVE, prochainId(), exigerSession(), null));
             case "resume" -> {
@@ -82,6 +87,11 @@ public class ClientConsole {
                 String json = ligne.substring(3).trim();
                 if (json.isEmpty()) throw new IllegalArgumentException("usage : raw <json>");
                 Framing.ecrire(out, json);   // envoyé tel quel, sans aucune validation côté client
+            }
+            case "mot" -> {
+                if (mots.length < 2) throw new IllegalArgumentException("usage : mot <mot>");
+                envoyer(out, new Message(TypeMessage.WORD, prochainId(), exigerSession(),
+                        payload("word", mots[1])));
             }
             default -> {
                 if (ligne.length() != 1) {
@@ -116,7 +126,7 @@ public class ClientConsole {
         switch (m.getType()) {
             case TypeMessage.WELCOME -> System.out.println("Bienvenue " + p.path("pseudonym").asText());
             case TypeMessage.STATE -> {
-                if (p.has("token")) {      // seulement dans la réponse à NEW_GAME
+                if (p.has("token")) {      // NEW_GAME ou JOIN_GAME
                     sessionId = m.getSessionId();
                     jeton = p.get("token").asText();
                     System.out.println("Session mémorisée : " + sessionId + " / jeton : " + jeton);
@@ -126,7 +136,12 @@ public class ClientConsole {
                         + " | erreurs : " + p.path("errors").asInt()
                         + " (reste " + p.path("remaining").asInt() + ")"
                         + (p.has("result") ? " | coup : " + p.get("result").asText() : "")
-                        + (p.has("revealed") ? " | mot complet : " + p.get("revealed").asText() : ""));
+                        + (p.has("revealed") ? " | mot complet : " + p.get("revealed").asText() : "")
+                        + (p.has("code") ? " | code : " + p.get("code").asText() : "")
+                        + (p.has("players") ? " | joueurs : " + p.get("players") : "")
+                        + (p.has("your_turn") ? " | votre tour : " + p.get("your_turn").asBoolean() : "")
+                        + (p.has("winner") ? " | vainqueur : " + p.get("winner").asText()
+                        + (p.path("you_won").asBoolean() ? " (vous)" : "") : ""));
             }
             case TypeMessage.ERROR -> System.out.println("ERREUR " + p.path("code").asText()
                     + " : " + p.path("message").asText());

@@ -1,9 +1,11 @@
 package serveur;
 
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import metier.Joueur;
 import metier.Partie;
+import metier.PartieMulti;
 import metier.Session;
 import metier.enums.EtatPartie;
 import metier.enums.ResultatCoup;
@@ -11,11 +13,11 @@ import metier.exceptions.InvalidLetterException;
 import metier.exceptions.InvalidStateException;
 import metier.exceptions.PenduException;
 import metier.exceptions.PlayerNotAllowedException;
+import protocole.exceptions.InvalidMessageException;
 import protocole.Codec;
 import protocole.Framing;
 import protocole.Message;
 import protocole.TypeMessage;
-import protocole.exceptions.InvalidMessageException;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -24,7 +26,9 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
 import java.util.Map;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.LinkedBlockingQueue;
 
 // Une instance par connexion cliente : lit les requêtes, appelle le métier, répond.
 public class ClientHandler implements Runnable {
@@ -37,6 +41,13 @@ public class ClientHandler implements Runnable {
     // sessions attachées à cette connexion (une connexion peut en porter plusieurs)
     private final Map<String, Session> sessions = new ConcurrentHashMap<>();
 
+    // Tout ce qui part vers le client passe par cette file, vidée par un thread d'écriture.
+    // Les écouteurs de parties sont appelés pendant que la partie est verrouillée : ils ne
+    // doivent jamais écrire sur une socket (un client lent bloquerait toute la partie).
+    private final BlockingQueue<Message> sortie = new LinkedBlockingQueue<>();
+    private volatile Thread threadLecture;
+    private volatile Thread threadEcriture;
+
     ClientHandler(Socket socket, Serveur serveur) {
         this.socket = socket;
         this.serveur = serveur;
@@ -46,10 +57,12 @@ public class ClientHandler implements Runnable {
     public void run() {
         String origine = String.valueOf(socket.getRemoteSocketAddress());
         System.out.println("[+] " + origine);
+        threadLecture = Thread.currentThread();
         try {
             socket.setKeepAlive(true);   // détecte à terme les connexions mortes
             in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
             out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
+            threadEcriture = Thread.ofVirtual().start(this::ecrireSortie);
 
             while (true) {
                 String texte = Framing.lire(in);
@@ -89,7 +102,9 @@ public class ClientHandler implements Runnable {
             }
             switch (m.getType()) {
                 case TypeMessage.NEW_GAME -> nouvellePartie(m);
+                case TypeMessage.JOIN_GAME -> rejoindre(m);
                 case TypeMessage.LETTER -> lettre(m);
+                case TypeMessage.WORD -> mot(m);
                 case TypeMessage.SAVE -> sauvegarder(m);
                 case TypeMessage.RESUME -> reprendre(m);
                 default -> throw new InvalidMessageException("Type inconnu : " + m.getType());
@@ -115,13 +130,18 @@ public class ClientHandler implements Runnable {
     private void nouvellePartie(Message m) {
         Integer n = m.entier("players");
         int nbJoueurs = (n == null) ? 1 : n;
-        if (nbJoueurs != 1) {
-            // première version : solo uniquement (le multi viendra avec JOIN_GAME)
-            throw new InvalidStateException("Seules les parties solo sont disponibles pour le moment");
+        if (nbJoueurs < 1 || nbJoueurs > 2) {
+            throw new InvalidMessageException("'players' doit valoir 1 ou 2");
         }
         Session s = serveur.getGestionnaire().creerPartie(joueur, nbJoueurs);
         attacher(s);
-        envoyer(etat(s, m.getRequestId(), null, true));   // seule réponse qui contient le jeton
+        envoyer(etat(s, m.getRequestId(), null, true));   // contient le jeton
+    }
+
+    private void rejoindre(Message m) {
+        Session s = serveur.getGestionnaire().rejoindrePartieParCode(m.texte("code"), joueur);
+        attacher(s);
+        envoyer(etat(s, m.getRequestId(), null, true));   // contient le jeton
     }
 
     private void lettre(Message m) {
@@ -134,6 +154,15 @@ public class ClientHandler implements Runnable {
         // Rejouée avec le même request_id, la requête n'est exécutée qu'une fois
         ResultatCoup resultat = s.executerUneFois(m.getRequestId(),
                 () -> s.getPartie().proposerLettre(s, c));
+        envoyer(etat(s, m.getRequestId(), resultat, false));
+    }
+
+    private void mot(Message m) {
+        Session s = sessionAttachee(m.getSessionId());
+        String proposition = m.texte("word");
+        // Rejouée avec le même request_id, la requête n'est exécutée qu'une fois
+        ResultatCoup resultat = s.executerUneFois(m.getRequestId(),
+                () -> s.getPartie().proposerMot(s, proposition));
         envoyer(etat(s, m.getRequestId(), resultat, false));
     }
 
@@ -151,6 +180,7 @@ public class ClientHandler implements Runnable {
         // Vérifie id + jeton, reprend la session, et la retire à l'ancienne connexion éventuelle
         Session s = serveur.reprendre(m.getSessionId(), m.texte("token"), this);
         sessions.put(s.getIdentifiant(), s);
+        s.setEcouteur(p -> pousser(s));   // remplace l'écouteur de l'ancienne connexion
         envoyer(etat(s, m.getRequestId(), null, false));
     }
 
@@ -158,6 +188,7 @@ public class ClientHandler implements Runnable {
 
     private void attacher(Session s) {
         sessions.put(s.getIdentifiant(), s);
+        s.setEcouteur(p -> pousser(s));
         serveur.enregistrer(s, this);
     }
 
@@ -169,10 +200,21 @@ public class ClientHandler implements Runnable {
     private Session sessionAttachee(String sessionId) {
         Session s = sessions.get(sessionId);
         if (s != null) return s;
-        // Session inexistante -> UNKNOWN_SESSION (lancée par retrouver) ; sinon elle existe
-        // mais n'appartient pas à cette connexion
+        // Session inexistante -> UNKNOWN_SESSION (lancée par retrouver) ;
+        // sinon elle existe mais n'appartient pas à cette connexion
         serveur.getGestionnaire().retrouver(sessionId);
         throw new PlayerNotAllowedException("Session non attachée à cette connexion");
+    }
+
+    // ===== Notifications d'un adversaire =====
+
+    // Appelée par la partie (donc partie verrouillée) quand son état change.
+    private void pousser(Session s) {
+        // Si c'est ma propre requête qui a changé l'état, la réponse directe le contient déjà
+        if (Thread.currentThread() == threadLecture) return;
+        // Session reprise ailleurs ou sauvegardée : cette connexion n'en est plus propriétaire
+        if (serveur.proprietaire(s.getIdentifiant()) != this) return;
+        sortie.add(etat(s, null, null, false));
     }
 
     // ===== Construction de la réponse STATE =====
@@ -190,6 +232,19 @@ public class ClientHandler implements Runnable {
             if (e == EtatPartie.GAGNEE || e == EtatPartie.PERDUE) {
                 n.put("revealed", p.getMotRevele());   // jamais avant la fin
             }
+            if (p instanceof PartieMulti pm) {
+                if (e == EtatPartie.EN_ATTENTE) n.put("code", pm.getCode());
+                ArrayNode noms = n.putArray("players");
+                for (Session x : pm.getSessions()) {
+                    noms.add(x.getJoueur().getPseudonyme());
+                }
+                if (e == EtatPartie.EN_COURS) n.put("your_turn", pm.getJoueurCourant() == s);
+                Session vainqueur = pm.getVainqueur();
+                if (vainqueur != null) {
+                    n.put("winner", vainqueur.getJoueur().getPseudonyme());
+                    n.put("you_won", vainqueur == s);
+                }
+            }
         }
         if (resultat != null) n.put("result", resultat.name());
         if (avecJeton) n.put("token", s.getJeton());
@@ -199,8 +254,17 @@ public class ClientHandler implements Runnable {
     // ===== Réseau =====
 
     private void envoyer(Message m) {
+        sortie.add(m);
+    }
+
+    private void ecrireSortie() {
         try {
-            Framing.ecrire(out, Codec.encoder(m));
+            while (true) {
+                Message m = sortie.take();
+                Framing.ecrire(out, Codec.encoder(m));
+            }
+        } catch (InterruptedException e) {
+            // fermeture de la connexion
         } catch (IOException e) {
             fermer();
         }
@@ -212,6 +276,8 @@ public class ClientHandler implements Runnable {
             serveur.liberer(s, this);
         }
         sessions.clear();
+        Thread ecriture = threadEcriture;
+        if (ecriture != null) ecriture.interrupt();
         try {
             socket.close();
         } catch (IOException ignore) { }

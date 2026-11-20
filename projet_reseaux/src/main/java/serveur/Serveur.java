@@ -56,6 +56,11 @@ public class Serveur {
         }
     }
 
+    // Lecture seule, volontairement non synchronisée (table concurrente)
+    ClientHandler proprietaire(String sessionId) {
+        return proprietaires.get(sessionId);
+    }
+
     // ===== Démarrage =====
 
     public void demarrer(int port) throws IOException {
